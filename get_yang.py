@@ -124,7 +124,11 @@ class SSHClient:
                 "{urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring}format"
             ).text
 
-            schemas.append((identifier, version, yangformat))
+            if yangformat != "yang":
+                print(f"Skipping {identifier}@{version} ({yangformat})")
+                continue
+
+            schemas.append((identifier, version))
 
         return schemas
 
