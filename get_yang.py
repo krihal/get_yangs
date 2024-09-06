@@ -37,23 +37,23 @@ class SSHClient:
 
         self.netconf_state = """
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="0">
-  <get>
-    <filter type="subtree">
-      <netconf-state xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
-        <schemas/>
-      </netconf-state>
-    </filter>
-  </get>
+    <get>
+        <filter type="subtree">
+            <netconf-state xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
+                <schemas/>
+                </netconf-state>
+        </filter>
+    </get>
 </rpc>
 ]]>]]>"""
 
         self.netconf_get_schema = """
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="104">
-  <get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
-    <identifier>{{IDENTIFIER}}</identifier>
-    <version>{{VERSION}}</version>
-    <format>yang</format>
-  </get-schema>
+    <get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
+        <identifier>{{IDENTIFIER}}</identifier>
+        <version>{{VERSION}}</version>
+        <format>yang</format>
+    </get-schema>
 </rpc>
 ]]>]]>"""
 
@@ -120,6 +120,8 @@ class SSHClient:
 
         self.__debug_print("Reading hello message")
 
+        # Read the first hello message character by character
+        # until we hit the "]]>]]>" delimiter.
         while not self.client.poll():
             c = self.client.stdout.read(1)
             data += c
@@ -133,10 +135,14 @@ class SSHClient:
         self.__debug_print(data.encode("utf-8"))
         self.__debug_print("End of hello message")
 
+        # No need to continue if the NETCONF monitoring capability is
+        # not supported.
         if "ietf-netconf-monitoring" not in data:
             print("NETCONF monitoring not supported")
             sys.exit(1)
 
+        # Check if the data contains newline characters or not. This
+        # is used to determine how to read the rest of the data.
         if "\n" in data:
             self.__newline_data = True
         else:
