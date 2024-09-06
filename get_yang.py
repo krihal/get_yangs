@@ -97,6 +97,15 @@ class SSHClient:
         if self.__debug:
             print(message)
 
+    def __is_connected(self):
+            """
+        Check if the SSH client is connected to the device.
+        """
+
+        if not self.__connected:
+            self.__debug_print("Not connected to device")
+            sys.exit(1)
+
     def read_hello(self):
         """
         Read the hello message from the device. The hello message is sent by the
@@ -105,9 +114,7 @@ class SSHClient:
         Figure out if we should read line by line or character by charater.
         """
 
-        if not self.__connected:
-            self.__debug_print("Not connected to device")
-            sys.exit(1)
+        self.__is_connected()
 
         data = ""
 
@@ -139,9 +146,7 @@ class SSHClient:
         used by NETCONF to separate the XML data from the NETCONF framing.
         """
 
-        if not self.__connected:
-            self.__debug_print("Not connected to device")
-            sys.exit(1)
+        self.__is_connected()
 
         data = ""
 
@@ -173,9 +178,7 @@ class SSHClient:
         containing a valid XML NETCONF message.
         """
 
-        if not self.__connected:
-            self.__debug_print("Not connected to device")
-            sys.exit(1)
+        self.__is_connected()
 
         self.__debug_print("Sending command:")
         self.__debug_print(command)
