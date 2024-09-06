@@ -3,9 +3,21 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+"""
+This script connects to a device using SSH and the NETCONF subsystem. It then
+requests the YANG schema for each module on the device and writes the schema to
+a file in the specified output directory.
+"""
+
 
 class SSHClient:
+    """
+    A simple SSH client that connects to a device using SSH and the NETCONF
+    subsystem. It sends NETCONF messages to the device and reads the responses.
+    """
+
     def __init__(self, host, user, subsystem=""):
+        """Initialize the SSH client."""
         self.host = host
         self.user = user
         self.subsystem = subsystem
@@ -43,6 +55,10 @@ class SSHClient:
 ]]>]]>"""
 
     def connect(self):
+        """
+        Create a SSH client and connect to the device using the specified
+        username and hostname.
+        """
         cmd_args = ["ssh", f"{self.user}@{self.host}"]
 
         if self.subsystem:
@@ -59,6 +75,11 @@ class SSHClient:
         )
 
     def read_command_output(self):
+        """
+        Read the output until we hit the "]]>]]>" delimiter. This delimiter is
+        used by NETCONF to separate the XML data from the NETCONF framing.
+        """
+
         data = ""
 
         for line in self.client.stdout:
@@ -71,10 +92,20 @@ class SSHClient:
         return data
 
     def write_command(self, command):
+        """
+        Write a command to the SSH client. The command should be a string
+        containing a valid XML NETCONF message.
+        """
+
         self.client.stdin.write(command + "\n")
         self.client.stdin.flush()
 
     def parse_netconf_state(self, data):
+        """ "
+        Parse the NETCONF state data and return a list of tuples containing the
+        module identifier, version, and format.
+        """
+
         root = ET.fromstring(data)
         schemas = []
 
@@ -98,6 +129,10 @@ class SSHClient:
         return schemas
 
     def get_netconf_schema(self, identifier, version):
+        """
+        Get the YANG schema for the specified module identifier and version.
+        """
+
         command = self.netconf_get_schema.replace("{{IDENTIFIER}}", identifier)
         command = command.replace("{{VERSION}}", version)
 
@@ -108,6 +143,11 @@ class SSHClient:
         return data
 
     def parse_netconf_schema_yang(self, data, identifier, version, output_path):
+        """
+        Parse the NETCONF schema data and write the YANG schema to a file in
+        the specified output directory.
+        """
+
         root = ET.fromstring(data)
 
         data = root.find(
@@ -136,14 +176,23 @@ def main():
 
     client = SSHClient(host, user, "netconf")
     client.connect()
+
+    # Read the initial hello message
     client.read_command_output()
+
+    # Answer the hello message
     client.write_command(client.netconf_hello)
+
+    # Send the state request
     client.write_command(client.netconf_state)
 
+    # Read the state data
     data = client.read_command_output()
 
+    # Parse the state data
     states = client.parse_netconf_state(data)
 
+    # Get the schema for each state
     for state in states:
         schema = client.get_netconf_schema(state[0], state[1])
         client.parse_netconf_schema_yang(schema, state[0], state[1], output_path)
