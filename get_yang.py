@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 
 """
@@ -16,13 +17,14 @@ class SSHClient:
     subsystem. It sends NETCONF messages to the device and reads the responses.
     """
 
-    def __init__(self, host, user, subsystem=""):
+    def __init__(self, host, user, subsystem="", debug=False):
         """Initialize the SSH client."""
         self.host = host
         self.user = user
         self.subsystem = subsystem
         self.client = None
         self.__connected = False
+        self.__debug = debug
 
         self.netconf_hello = """
 <?xml version="1.0" encoding="UTF-8"?>
@@ -66,6 +68,9 @@ class SSHClient:
             cmd_args.append("-s")
             cmd_args.append(self.subsystem)
 
+        if self.__debug:
+            print(f"Connection string: " + " ".join(cmd_args))
+
         try:
             self.client = subprocess.Popen(
                 cmd_args,
@@ -104,6 +109,11 @@ class SSHClient:
 
         data = data.replace("]]>]]>", "")
 
+        if self.__debug:
+            print("Received data:")
+            print(data)
+            print("End of data")
+
         return data
 
     def write_command(self, command):
@@ -115,6 +125,11 @@ class SSHClient:
         if not self.__connected:
             print("Not connected to device")
             sys.exit(1)
+
+        if self.__debug:
+            print("Sending command:")
+            print(command)
+            print("End of command")
 
         self.client.stdin.write(command + "\n")
         self.client.stdin.flush()
@@ -185,20 +200,26 @@ class SSHClient:
         with open(output_path, "w") as f:
             f.write(data.strip())
 
+        return output_len
+
 
 def main():
-    if len(sys.argv) != 4:
-        print("Usage: get_yang.py <host> <user> <output_path>")
+    if len(sys.argv) < 4:
+        print("Usage: get_yang.py <host> <user> <output_path> (<debug>)")
         sys.exit(1)
 
     host = sys.argv[1]
     user = sys.argv[2]
     output_path = sys.argv[3]
 
+    debug = False
+    if len(sys.argv) == 5:
+        debug = True
+
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    client = SSHClient(host, user, "netconf")
+    client = SSHClient(host, user, "netconf", debug=debug)
     client.connect()
 
     # Read the initial hello message
@@ -216,10 +237,39 @@ def main():
     # Parse the state data
     states = client.parse_netconf_state(data)
 
+    yang_largest = 0
+    yang_largest_name = ""
+    yang_smallest = 0
+    yang_smallest_name = ""
+    yang_total = 0
+    yang_num = 0
+
     # Get the schema for each state
+    time_start = time.time()
+
     for state in states:
         schema = client.get_netconf_schema(state[0], state[1])
-        client.parse_netconf_schema_yang(schema, state[0], state[1], output_path)
+        size = client.parse_netconf_schema_yang(schema, state[0], state[1], output_path)
+
+        if yang_largest < size:
+            yang_largest = size
+            yang_largest_name = state[0] + "@" + state[1]
+
+        if yang_smallest > size or yang_smallest == 0:
+            yang_smallest = size
+            yang_smallest_name = state[0] + "@" + state[1]
+
+        yang_num += 1
+        yang_total += size
+
+    time_end = time.time()
+
+    print("")
+    print(f"YANG Modules: {yang_num}")
+    print(f"YANG Largest: {yang_largest_name} ({yang_largest} bytes)")
+    print(f"YANG Smallest: {yang_smallest_name} ({yang_smallest} bytes)")
+    print(f"Total YANG size: {yang_total} bytes")
+    print(f"Time taken: {time_end - time_start:.2f} seconds")
 
 
 if __name__ == "__main__":
