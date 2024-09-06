@@ -133,6 +133,10 @@ class SSHClient:
         self.__debug_print(data.encode("utf-8"))
         self.__debug_print("End of hello message")
 
+        if "ietf-netconf-monitoring" not in data:
+            print("NETCONF monitoring not supported")
+            sys.exit(1)
+
         if "\n" in data:
             self.__newline_data = True
         else:
