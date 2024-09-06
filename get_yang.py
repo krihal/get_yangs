@@ -98,7 +98,7 @@ class SSHClient:
             print(message)
 
     def __is_connected(self):
-            """
+        """
         Check if the SSH client is connected to the device.
         """
 
@@ -108,8 +108,8 @@ class SSHClient:
 
     def read_hello(self):
         """
-        Read the hello message from the device. The hello message is sent by the
-        device when the NETCONF session is established.
+        Read the hello message from the device. The hello message is sent by
+        the device when the NETCONF session is established.
 
         Figure out if we should read line by line or character by charater.
         """
