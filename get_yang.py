@@ -178,8 +178,9 @@ class SSHClient:
         ).text
 
         output_path = f"{output_path}/{identifier}@{version}.yang"
+        output_len = len(data)
 
-        print(f"Writing to {output_path}")
+        print(f"Writing to {output_path} ({output_len} bytes)")
 
         with open(output_path, "w") as f:
             f.write(data.strip())
