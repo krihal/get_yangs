@@ -68,8 +68,7 @@ class SSHClient:
             cmd_args.append("-s")
             cmd_args.append(self.subsystem)
 
-        if self.__debug:
-            print(f"Connection string: " + " ".join(cmd_args))
+        self.__debug_print(f"Connection string: " + " ".join(cmd_args))
 
         try:
             self.client = subprocess.Popen(
@@ -77,18 +76,62 @@ class SSHClient:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                bufsize=0,
+                bufsize=1024,
                 universal_newlines=True,
             )
 
             if self.client.poll() is not None:
-                print("Error connecting to device")
+                self.__debug_print("Error connecting to device")
                 sys.exit(1)
         except Exception as e:
-            print(f"Error connecting to {self.host}: {e}")
+            self.__debug_print(f"Error connecting to {self.host}: {e}")
             sys.exit(1)
 
         self.__connected = True
+
+    def __debug_print(self, message):
+        """
+        Print a debug message if the debug flag is set.
+        """
+
+        if self.__debug:
+            print(message)
+
+    def read_hello(self):
+        """
+        Read the hello message from the device. The hello message is sent by the
+        device when the NETCONF session is established.
+
+        Figure out if we should read line by line or character by charater.
+        """
+
+        if not self.__connected:
+            self.__debug_print("Not connected to device")
+            sys.exit(1)
+
+        data = ""
+
+        self.__debug_print("Reading hello message")
+
+        while not self.client.poll():
+            c = self.client.stdout.read(1)
+            data += c
+
+            if "]]>]]>" in data:
+                break
+
+        data = data.replace("]]>]]>", "")
+
+        self.__debug_print("Received hello message:")
+        self.__debug_print(data.encode("utf-8"))
+        self.__debug_print("End of hello message")
+
+        if "\n" in data:
+            self.__newline_data = True
+        else:
+            self.__newline_data = False
+
+        return data
 
     def read_command_output(self):
         """
@@ -97,22 +140,30 @@ class SSHClient:
         """
 
         if not self.__connected:
-            print("Not connected to device")
+            self.__debug_print("Not connected to device")
             sys.exit(1)
 
         data = ""
 
-        for line in self.client.stdout:
-            data += line
-            if "]]>]]>" in line:
-                break
+        self.__debug_print("Reading data")
+
+        if self.__newline_data:
+            for line in self.client.stdout:
+                data += line
+                if "]]>]]>" in line:
+                    break
+        else:
+            while not self.client.poll():
+                data += self.client.stdout.read(1)
+
+                if "]]>]]>" in data:
+                    break
 
         data = data.replace("]]>]]>", "")
 
-        if self.__debug:
-            print("Received data:")
-            print(data)
-            print("End of data")
+        self.__debug_print("Received data:")
+        self.__debug_print(data.encode("utf-8"))
+        self.__debug_print("End of data")
 
         return data
 
@@ -123,13 +174,12 @@ class SSHClient:
         """
 
         if not self.__connected:
-            print("Not connected to device")
+            self.__debug_print("Not connected to device")
             sys.exit(1)
 
-        if self.__debug:
-            print("Sending command:")
-            print(command)
-            print("End of command")
+        self.__debug_print("Sending command:")
+        self.__debug_print(command)
+        self.__debug_print("End of command")
 
         self.client.stdin.write(command + "\n")
         self.client.stdin.flush()
@@ -159,7 +209,7 @@ class SSHClient:
             ).text
 
             if yangformat != "yang":
-                print(f"Skipping {identifier}@{version} ({yangformat})")
+                self.__debug_print(f"Skipping {identifier}@{version} ({yangformat})")
                 continue
 
             schemas.append((identifier, version))
@@ -223,7 +273,7 @@ def main():
     client.connect()
 
     # Read the initial hello message
-    client.read_command_output()
+    client.read_hello()
 
     # Answer the hello message
     client.write_command(client.netconf_hello)
