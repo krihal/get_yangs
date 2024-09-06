@@ -182,7 +182,7 @@ class SSHClient:
         print(f"Writing to {output_path}")
 
         with open(output_path, "w") as f:
-            f.write(data)
+            f.write(data.strip())
 
 
 def main():
