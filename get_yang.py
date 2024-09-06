@@ -22,6 +22,7 @@ class SSHClient:
         self.user = user
         self.subsystem = subsystem
         self.client = None
+        self.__connected = False
 
         self.netconf_hello = """
 <?xml version="1.0" encoding="UTF-8"?>
@@ -65,20 +66,34 @@ class SSHClient:
             cmd_args.append("-s")
             cmd_args.append(self.subsystem)
 
-        self.client = subprocess.Popen(
-            cmd_args,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-            universal_newlines=True,
-        )
+        try:
+            self.client = subprocess.Popen(
+                cmd_args,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=0,
+                universal_newlines=True,
+            )
+
+            if self.client.poll() is not None:
+                print("Error connecting to device")
+                sys.exit(1)
+        except Exception as e:
+            print(f"Error connecting to {self.host}: {e}")
+            sys.exit(1)
+
+        self.__connected = True
 
     def read_command_output(self):
         """
         Read the output until we hit the "]]>]]>" delimiter. This delimiter is
         used by NETCONF to separate the XML data from the NETCONF framing.
         """
+
+        if not self.__connected:
+            print("Not connected to device")
+            sys.exit(1)
 
         data = ""
 
@@ -96,6 +111,10 @@ class SSHClient:
         Write a command to the SSH client. The command should be a string
         containing a valid XML NETCONF message.
         """
+
+        if not self.__connected:
+            print("Not connected to device")
+            sys.exit(1)
 
         self.client.stdin.write(command + "\n")
         self.client.stdin.flush()
