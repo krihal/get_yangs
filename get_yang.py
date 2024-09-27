@@ -1,8 +1,37 @@
+import hashlib
 import os
 import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from collections import defaultdict
+
+
+def calculate_checksum(file_path):
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
+def compare_checksums(root_dir):
+    file_checksums = defaultdict(dict)
+
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        for filename in filenames:
+            file_path = os.path.join(dirpath, filename)
+            checksum = calculate_checksum(file_path)
+            file_checksums[filename][file_path] = checksum
+
+    for filename, paths_checksums in file_checksums.items():
+        if len(paths_checksums) > 1:
+            checksums = set(paths_checksums.values())
+            if len(checksums) != 1:
+                print("\n\nFiles have different checksums:")
+    else:
+        print("\n\nAll YANG models have identical checksums.")
+
 
 """
 This script connects to a device using SSH and the NETCONF subsystem. It then
@@ -37,23 +66,23 @@ class SSHClient:
 
         self.netconf_state = """
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="0">
-    <get>
-        <filter type="subtree">
-            <netconf-state xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
-                <schemas/>
-                </netconf-state>
-        </filter>
-    </get>
+  <get>
+    <filter type="subtree">
+      <netconf-state xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
+        <schemas/>
+      </netconf-state>
+    </filter>
+  </get>
 </rpc>
 ]]>]]>"""
 
         self.netconf_get_schema = """
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="104">
-    <get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
-        <identifier>{{IDENTIFIER}}</identifier>
-        <version>{{VERSION}}</version>
-        <format>yang</format>
-    </get-schema>
+  <get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring">
+    <identifier>{{IDENTIFIER}}</identifier>
+    <version>{{VERSION}}</version>
+    <format>yang</format>
+  </get-schema>
 </rpc>
 ]]>]]>"""
 
@@ -120,8 +149,6 @@ class SSHClient:
 
         self.__debug_print("Reading hello message")
 
-        # Read the first hello message character by character
-        # until we hit the "]]>]]>" delimiter.
         while not self.client.poll():
             c = self.client.stdout.read(1)
             data += c
@@ -135,14 +162,10 @@ class SSHClient:
         self.__debug_print(data.encode("utf-8"))
         self.__debug_print("End of hello message")
 
-        # No need to continue if the NETCONF monitoring capability is
-        # not supported.
         if "ietf-netconf-monitoring" not in data:
             print("NETCONF monitoring not supported")
             sys.exit(1)
 
-        # Check if the data contains newline characters or not. This
-        # is used to determine how to read the rest of the data.
         if "\n" in data:
             self.__newline_data = True
         else:
@@ -258,7 +281,7 @@ class SSHClient:
         output_path = f"{output_path}/{identifier}@{version}.yang"
         output_len = len(data)
 
-        print(f"Writing to {output_path} ({output_len} bytes)")
+        self.__debug_print(f"Writing to {output_path} ({output_len} bytes)")
 
         with open(output_path, "w") as f:
             f.write(data.strip())
@@ -268,10 +291,10 @@ class SSHClient:
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage: get_yang.py <host> <user> <output_path> (<debug>)")
+        print("Usage: get_yang.py <hosts> <user> <output_path> (<debug>)")
         sys.exit(1)
 
-    host = sys.argv[1]
+    hosts = sys.argv[1]
     user = sys.argv[2]
     output_path = sys.argv[3]
 
@@ -282,57 +305,65 @@ def main():
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    client = SSHClient(host, user, "netconf", debug=debug)
-    client.connect()
+    for host in hosts.split(","):
+        if not os.path.exists(output_path + "/" + host):
+            os.makedirs(output_path + "/" + host)
 
-    # Read the initial hello message
-    client.read_hello()
+        client = SSHClient(host, user, "netconf", debug=debug)
+        client.connect()
 
-    # Answer the hello message
-    client.write_command(client.netconf_hello)
+        # Read the initial hello message
+        client.read_hello()
 
-    # Send the state request
-    client.write_command(client.netconf_state)
+        # Answer the hello message
+        client.write_command(client.netconf_hello)
 
-    # Read the state data
-    data = client.read_command_output()
+        # Send the state request
+        client.write_command(client.netconf_state)
 
-    # Parse the state data
-    states = client.parse_netconf_state(data)
+        # Read the state data
+        data = client.read_command_output()
 
-    yang_largest = 0
-    yang_largest_name = ""
-    yang_smallest = 0
-    yang_smallest_name = ""
-    yang_total = 0
-    yang_num = 0
+        # Parse the state data
+        states = client.parse_netconf_state(data)
 
-    # Get the schema for each state
-    time_start = time.time()
+        yang_largest = 0
+        yang_largest_name = ""
+        yang_smallest = 0
+        yang_smallest_name = ""
+        yang_total = 0
+        yang_num = 0
 
-    for state in states:
-        schema = client.get_netconf_schema(state[0], state[1])
-        size = client.parse_netconf_schema_yang(schema, state[0], state[1], output_path)
+        # Get the schema for each state
+        time_start = time.time()
 
-        if yang_largest < size:
-            yang_largest = size
-            yang_largest_name = state[0] + "@" + state[1]
+        for state in states:
+            schema = client.get_netconf_schema(state[0], state[1])
+            size = client.parse_netconf_schema_yang(
+                schema, state[0], state[1], output_path + "/" + host
+            )
 
-        if yang_smallest > size or yang_smallest == 0:
-            yang_smallest = size
-            yang_smallest_name = state[0] + "@" + state[1]
+            if yang_largest < size:
+                yang_largest = size
+                yang_largest_name = state[0] + "@" + state[1]
 
-        yang_num += 1
-        yang_total += size
+            if yang_smallest > size or yang_smallest == 0:
+                yang_smallest = size
+                yang_smallest_name = state[0] + "@" + state[1]
 
-    time_end = time.time()
+            yang_num += 1
+            yang_total += size
 
-    print("")
-    print(f"YANG Modules: {yang_num}")
-    print(f"YANG Largest: {yang_largest_name} ({yang_largest} bytes)")
-    print(f"YANG Smallest: {yang_smallest_name} ({yang_smallest} bytes)")
-    print(f"Total YANG size: {yang_total} bytes")
-    print(f"Time taken: {time_end - time_start:.2f} seconds")
+        time_end = time.time()
+
+        print("")
+        print(f"({host}) YANG Modules: {yang_num}")
+        print(f"({host}) YANG Largest: {yang_largest_name} ({yang_largest} bytes)")
+        print(f"({host}) YANG Smallest: {yang_smallest_name} ({yang_smallest} bytes)")
+        print(f"({host}) Total YANG size: {yang_total} bytes")
+        print(f"({host}) Duration: {time_end - time_start:.2f} seconds")
+
+    compare_checksums(output_path)
 
 
 if __name__ == "__main__":
